@@ -114,4 +114,4 @@ def start_scheduler(app):
 
 if __name__ == "__main__":
     start_scheduler(app)
-    app.run(debug=True)
+    app.run()
