@@ -1,3 +1,5 @@
+import os
+
 from flask import Flask, jsonify
 from flask_apscheduler import APScheduler
 from requests_html import AsyncHTMLSession
@@ -114,4 +116,5 @@ def start_scheduler(app):
 
 if __name__ == "__main__":
     start_scheduler(app)
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    port = int(os.environ.get("PORT", 5000))   # usa PORT quando fornecido pelo ambiente
+    app.run(host="0.0.0.0", port=port, debug=False)
