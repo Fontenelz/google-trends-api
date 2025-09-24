@@ -1,7 +1,18 @@
+# from flask import Flask
+# from app.routes import routes
+# from app.schedule import start_scheduler
+
+# def create_app():
+#     app = Flask(__name__)
+#     app.register_blueprint(routes)
+#     start_scheduler(app)
+#     return app
+
 import os
 from flask import Flask, jsonify
 from flask_apscheduler import APScheduler
 from requests_html import AsyncHTMLSession
+from playwright.async_api import async_playwright
 
 import asyncio
 import re
@@ -49,20 +60,43 @@ def formatar_dados(item: dict) -> dict:
         "keywords": keywords
     }
 
-
 async def fetch_trends():
-    """Scraping com renderização de JS via Pyppeteer"""
+    url = "https://trends.google.com/trends/trendingsearches/daily?geo=BR"
+    data = []
 
-    print("Scraping com renderização de JS via Pyppeteer")
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto(url, timeout=30000)
+
+        rows = await page.query_selector_all("tr[data-row-id]")
+        for row in rows:
+            cells = await row.query_selector_all("td")
+            if cells:
+                celulas_com_texto = [await cell.inner_text() for cell in cells]
+                item_data = {
+                    "index": celulas_com_texto[0],
+                    "title": celulas_com_texto[1],
+                    "data_volume": celulas_com_texto[2],
+                    "duration": celulas_com_texto[3],
+                    "keywords": [celulas_com_texto[4]],
+                }
+                data.append(formatar_dados(item_data))
+
+        await browser.close()
+    return data
     url = "https://trends.google.com/trends/trendingsearches/daily?geo=BR"
     r = await asession.get(url)
-    await r.html.arender(timeout=20)
-    # print(r.html.find("tr[data-row-id]"))
+    await r.html.arender(
+        timeout=20,
+        keep_page=True,
+        scrolldown=0,
+    )
+
     rows = r.html.find("tr[data-row-id]")
     data = []
     for row in rows:
         cells = row.find('td')
-        # print(cells.text)
         if cells:
             celulas_com_texto = [cell.text for cell in cells]
             item_data = {
@@ -70,16 +104,41 @@ async def fetch_trends():
                 "title": celulas_com_texto[1],
                 "data_volume": celulas_com_texto[2],
                 "duration": celulas_com_texto[3],
-                "keywords": [celulas_com_texto[4]],  # Coloca o 5º dado em uma lista para a chave 'keywords'
+                "keywords": [celulas_com_texto[4]],
             }
             data.append(formatar_dados(item_data))
-
-            # Exemplo de como usar a nova lista de textos            
-            # title = cells[0].text
-            # print(cell_texts)
-    # print(data)
-    titles = [ e.text for e in r.html.find("tr.enOdEe-wZVHld-xMbwt") ]
     return data
+
+# async def fetch_trends():
+#     """Scraping com renderização de JS via Pyppeteer"""
+
+#     print("Scraping com renderização de JS via Pyppeteer")
+#     url = "https://trends.google.com/trends/trendingsearches/daily?geo=BR"
+#     r = await asession.get(url)
+#     await r.html.arender(timeout=20)
+#     # print(r.html.find("tr[data-row-id]"))
+#     rows = r.html.find("tr[data-row-id]")
+#     data = []
+#     for row in rows:
+#         cells = row.find('td')
+#         # print(cells.text)
+#         if cells:
+#             celulas_com_texto = [cell.text for cell in cells]
+#             item_data = {
+#                 "index": celulas_com_texto[0],
+#                 "title": celulas_com_texto[1],
+#                 "data_volume": celulas_com_texto[2],
+#                 "duration": celulas_com_texto[3],
+#                 "keywords": [celulas_com_texto[4]],  # Coloca o 5º dado em uma lista para a chave 'keywords'
+#             }
+#             data.append(formatar_dados(item_data))
+
+#             # Exemplo de como usar a nova lista de textos            
+#             # title = cells[0].text
+#             # print(cell_texts)
+#     # print(data)
+#     titles = [ e.text for e in r.html.find("tr.enOdEe-wZVHld-xMbwt") ]
+#     return data
 
 
 def update_trends():
@@ -116,6 +175,6 @@ def start_scheduler(app):
 
 
 if __name__ == "__main__":
-    from waitress import serve
-    port = int(os.environ.get("PORT", 3001))
-    serve(app, host="0.0.0.0", port=port)
+    start_scheduler(app)
+    port = int(os.environ.get("PORT", 5000))   # usa PORT quando fornecido pelo ambiente
+    app.run(host="0.0.0.0", port=port, debug=True)
