@@ -11,3 +11,4 @@ requests-html
 lxml[html_clean]
 waitress
 playwright
+websockets
