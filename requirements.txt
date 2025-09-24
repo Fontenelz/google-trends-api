@@ -10,3 +10,4 @@ gunicorn
 requests-html
 lxml[html_clean]
 waitress
+playwright
