@@ -7,7 +7,7 @@ async def fetch_trends():
     url = "https://trends.google.com/trends/trendingsearches/daily?geo=BR"
     r = await asession.get(url)
     await r.html.arender(
-        timeout=20
+        timeout=20,
         keep_page=True,
         scrolldown=0,
         args=["--no-sandbox", "--disable-setuid-sandbox"]
