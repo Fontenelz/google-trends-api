@@ -9,34 +9,41 @@
 #     return app
 
 import os
-from flask import Flask, jsonify
+from fastapi import FastAPI, Response
+from flask import Flask, jsonify, request
 from flask_apscheduler import APScheduler
 from requests_html import AsyncHTMLSession
 from playwright.async_api import async_playwright
+from flask_cors import CORS
 
 import asyncio
 import re
 import urllib.parse
 
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": [
+    "http://localhost:3000",
+    "http://127.0.0.1:5173",
+    "https://radar-tendencias.onrender.com/"
+]}})
 asession = AsyncHTMLSession()
 
 trends_cache = []  # cache global pra evitar rodar o scraping em toda request
-
+geo = "BR"
+category = 0
 def formatar_dados(item: dict) -> dict:
     """
     Recebe um item no formato bruto e devolve um dicionário formatado.
     """
-    # Extrai volume de buscas (ex: "50K+")
-    volume_match = re.search(r"(\d+[KMB]?\+?)", item.get("data_volume", ""))
+    volume_match = re.search(r"(\d+(?:[.,]\d+)?\s*(?:mil|M|K|B)?\+?)", item.get("data_volume", ""), flags=re.IGNORECASE)
     volume = volume_match.group(1) if volume_match else None
 
-    # Extrai porcentagem de variação (ex: "1,000%")
-    perc_match = re.search(r"(\d{1,3}(?:,\d{3})*%|\d+%)", item.get("data_volume", ""))
+    # Extrai porcentagem (ex: "1.000%")
+    perc_match = re.search(r"(\d{1,3}(?:[.,]\d{3})*%|\d+%)", item.get("data_volume", ""))
     variation = perc_match.group(1) if perc_match else None
 
-    # Extrai tempo (ex: "1 hour ago")
-    time_match = re.search(r"(\d+\s\w+\sago)", item.get("duration", ""))
+    # Extrai tempo (ex: "há 23 horas", "há 2 dias")
+    time_match = re.search(r"(há\s+\d+\s+\w+)", item.get("duration", ""))
     duration = time_match.group(1) if time_match else None
 
     # Extrai palavras-chave (remove duplicações e "Search term", "Explore")
@@ -61,53 +68,64 @@ def formatar_dados(item: dict) -> dict:
     }
 
 async def fetch_trends():
-    url = "https://trends.google.com/trends/trendingsearches/daily?geo=BR"
-    data = []
+    try:
+        url = f"https://trends.google.com.br/trending?geo={geo}&category={category}"
+        data = []
 
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
-        await page.goto(url, timeout=30000)
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            context = await browser.new_context()
+            page = await context.new_page()
 
-        rows = await page.query_selector_all("tr[data-row-id]")
-        for row in rows:
-            cells = await row.query_selector_all("td")
-            if cells:
-                celulas_com_texto = [await cell.inner_text() for cell in cells]
-                item_data = {
-                    "index": celulas_com_texto[0],
-                    "title": celulas_com_texto[1],
-                    "data_volume": celulas_com_texto[2],
-                    "duration": celulas_com_texto[3],
-                    "keywords": [celulas_com_texto[4]],
-                }
-                data.append(formatar_dados(item_data))
+            await page.goto(url, timeout=50000)
+            await page.wait_for_selector("tr[data-row-id]")
+            rows = await page.query_selector_all("tr[data-row-id]")
+            # screenshot_bytes = await page.screenshot()
+            # with open("screenshot.png", "wb") as f:
+            #     print("diga xxxx")
+            #     f.write(screenshot_bytes)
 
-        await browser.close()
-    return data
-    url = "https://trends.google.com/trends/trendingsearches/daily?geo=BR"
-    r = await asession.get(url)
-    await r.html.arender(
-        timeout=20,
-        keep_page=True,
-        scrolldown=0,
-    )
+            for row in rows:
+                cells = await row.query_selector_all("td")
+                if cells:
+                    celulas_com_texto = [await cell.inner_text() for cell in cells]
+                    item_data = {
+                        "index": celulas_com_texto[0],
+                        "title": celulas_com_texto[1],
+                        "data_volume": celulas_com_texto[2],
+                        "duration": celulas_com_texto[3],
+                        "keywords": [celulas_com_texto[4]],
+                    }
+                    data.append(formatar_dados(item_data))
+            await browser.close()
+            return data
+    except Exception:
+        return [ {"data": "nenhum dado ou erro ao buscar informações"} ]
+        
+    # url = f"https://trends.google.com.br/trending?geo={geo}&category={category}"
+    # print(url)
+    # r = await asession.get(url)
+    # await r.html.arender(
+    #     timeout=20,
+    #     keep_page=True,
+    #     scrolldown=0,
+    # )
 
-    rows = r.html.find("tr[data-row-id]")
-    data = []
-    for row in rows:
-        cells = row.find('td')
-        if cells:
-            celulas_com_texto = [cell.text for cell in cells]
-            item_data = {
-                "index": celulas_com_texto[0],
-                "title": celulas_com_texto[1],
-                "data_volume": celulas_com_texto[2],
-                "duration": celulas_com_texto[3],
-                "keywords": [celulas_com_texto[4]],
-            }
-            data.append(formatar_dados(item_data))
-    return data
+    # rows = r.html.find("tr[data-row-id]")
+    # data = []
+    # for row in rows:
+    #     cells = row.find('td')
+    #     if cells:
+    #         celulas_com_texto = [cell.text for cell in cells]
+    #         item_data = {
+    #             "index": celulas_com_texto[0],
+    #             "title": celulas_com_texto[1],
+    #             "data_volume": celulas_com_texto[2],
+    #             "duration": celulas_com_texto[3],
+    #             "keywords": [celulas_com_texto[4]],
+    #         }
+    #         data.append(formatar_dados(item_data))
+    # return data
 
 # async def fetch_trends():
 #     """Scraping com renderização de JS via Pyppeteer"""
@@ -154,7 +172,17 @@ def update_trends():
 
 
 @app.route("/trends")
-def get_trends():
+async def get_trends():
+    global geo     
+    global category
+
+    category = request.args.get("category")
+    geo = request.args.get("geo", default="BR")
+
+    if geo or category:
+        data = await fetch_trends()
+        return jsonify({"trends": data})
+    
     return jsonify({"trends": trends_cache})
 
 
