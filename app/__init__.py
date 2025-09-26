@@ -24,7 +24,7 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": [
     "http://localhost:3000",
     "http://127.0.0.1:5173",
-    "https://radar-tendencias.onrender.com/"
+    "https://radar-tendencias.onrender.com"
 ]}})
 asession = AsyncHTMLSession()
 
